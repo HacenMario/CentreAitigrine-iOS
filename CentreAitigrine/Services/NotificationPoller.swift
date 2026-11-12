@@ -2,6 +2,29 @@ import UIKit
 import UserNotifications
 import BackgroundTasks
 
+/// نموذج إشعار الخادم — بنفس حقول /api/notifications (_id, read, title(s), body(s)).
+/// ملاحظة مهمة: النوع بمستوى الملف (وليس داخل دالة) لأن دالتي process و deliver
+/// تستعملانه معاً — النوع المحلي داخل دالة غير مرئي خارجها في Swift.
+private struct Notif: Decodable {
+    let id: String
+    let read: Bool
+    let title: String?
+    let titles: [String: String]?
+    let body: String?
+    let bodies: [String: String]?
+
+    enum CodingKeys: String, CodingKey {
+        case id = "_id"
+        case read, title, titles, body, bodies
+    }
+}
+
+/// حاوية استجابة /api/notifications
+private struct NotifPayload: Decodable {
+    let notifications: [Notif]
+    let unread: Int?
+}
+
 /// جالب الإشعارات الأصلية — محاكاة Poller.java في أندرويد المعتمد v1.1.0:
 /// - يجلب آخر 50 إشعاراً من /api/notifications برأس x-auth-token
 ///   (التوكن المستخرج من جلسة الويب داخل التطبيق)
@@ -83,27 +106,9 @@ final class NotificationPoller {
     }
 
     private func process(data: Data, completion: ((UIBackgroundFetchResult) -> Void)?) {
-        struct Payload: Decodable {
-            let notifications: [Notif]
-            let unread: Int?
-        }
-        struct Notif: Decodable {
-            let id: String
-            let read: Bool
-            let title: String?
-            let titles: [String: String]?
-            let body: String?
-            let bodies: [String: String]?
-
-            enum CodingKeys: String, CodingKey {
-                case id = "_id"
-                case read, title, titles, body, bodies
-            }
-        }
-
-        let payload: Payload
+        let payload: NotifPayload
         do {
-            payload = try JSONDecoder().decode(Payload.self, from: data)
+            payload = try JSONDecoder().decode(NotifPayload.self, from: data)
         } catch {
             completion?(.failed)
             return
