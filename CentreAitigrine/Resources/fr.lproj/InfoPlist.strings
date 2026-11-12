@@ -1,0 +1,5 @@
+/* Localisation des permissions système — Français */
+"CFBundleDisplayName" = "Centre Ait Tigrine";
+"NSCameraUsageDescription" = "L'application utilise l'appareil photo lorsque la page le demande, pour partager des photos avec le centre (documents, fichiers…).";
+"NSPhotoLibraryUsageDescription" = "L'application utilise la photothèque lorsque la page le demande, pour sélectionner et joindre des images.";
+"NSLocationWhenInUseUsageDescription" = "L'application utilise la localisation lorsque la page le demande, pour afficher les services du centre les plus proches.";

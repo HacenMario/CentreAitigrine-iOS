@@ -1,0 +1,49 @@
+name: iOS Build
+
+# بناء تطبيق iOS على مستضيف macOS مجاني من GitHub — بلا حاجة إلى Mac محلي.
+# الناتج: ملف CentreAitigrine-unsigned.ipa (غير موقّع) كـ Artifact.
+# للتوقيع والنشر راجع README-AR.md (قسم البناء والتوقيع).
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - name: تحميل المستودع
+        uses: actions/checkout@v4
+
+      - name: عرض نسخ Xcode المتاحة واختيار الأحدث
+        run: |
+          ls /Applications | grep Xcode || true
+          LATEST=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          echo "استعمال: $LATEST"
+          sudo xcode-select -s "$LATEST"
+
+      - name: بناء التطبيق (Release، بدون توقيع)
+        run: |
+          xcodebuild \
+            -project CentreAitigrine.xcodeproj \
+            -target CentreAitigrine \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: تجميع ملف IPA غير الموقّع
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/CentreAitigrine.app Payload/
+          zip -qry CentreAitigrine-unsigned.ipa Payload
+          ls -lh CentreAitigrine-unsigned.ipa
+
+      - name: رفع الناتج كـ Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CentreAitigrine-unsigned-ipa
+          path: CentreAitigrine-unsigned.ipa
+          retention-days: 30
