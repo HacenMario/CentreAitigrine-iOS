@@ -24,7 +24,7 @@ enum Config {
     static let foregroundPollInterval: TimeInterval = 240
 
     /// إصدار التطبيق
-    static let appVersion = "1.0.0"
+    static let appVersion = "1.0.1"
 
     /// النطاقات الداخلية المسموح بفتحها داخل التطبيق (كل ما عداها يفتح في سفاري)
     static func isInternalHost(_ host: String?) -> Bool {

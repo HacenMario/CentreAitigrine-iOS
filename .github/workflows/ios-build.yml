@@ -2,7 +2,14 @@ name: iOS Build
 
 # بناء تطبيق iOS على مستضيف macOS مجاني من GitHub — بلا حاجة إلى Mac محلي.
 # الناتج: ملف CentreAitigrine-unsigned.ipa (غير موقّع) كـ Artifact.
-# للتوقيع والنشر راجع README-AR.md (قسم البناء والتوقيع).
+#
+# v2 — إصلاح خطأ:
+#   "xcodebuild: error: The flag -scheme, -testProductsPath, or -xctestrun
+#    is required when specifying -derivedDataPath."
+# السبب: الخيار -derivedDataPath يعمل فقط مع البناء عبر -scheme (وليس -target).
+# الحل: البناء الأساسي الآن عبر -scheme CentreAitigrine مع -destination
+#   generic/platform=iOS، ومعه مسار بديل آمن عبر -target + SYMROOT
+#   (بدون -derivedDataPath إطلاقاً) يعمل تلقائياً إن تعذّر الأول.
 on:
   workflow_dispatch:
   push:
@@ -10,34 +17,70 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: تحميل المستودع
         uses: actions/checkout@v4
 
-      - name: عرض نسخ Xcode المتاحة واختيار الأحدث
+      - name: اختيار أحدث نسخة Xcode
         run: |
           ls /Applications | grep Xcode || true
           LATEST=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
           echo "استعمال: $LATEST"
           sudo xcode-select -s "$LATEST"
+          xcodebuild -version
+
+      - name: عرض الـ Schemes المتاحة (للتشخيص)
+        run: xcodebuild -project CentreAitigrine.xcodeproj -list
 
       - name: بناء التطبيق (Release، بدون توقيع)
         run: |
-          xcodebuild \
+          set -o pipefail
+          rm -f build.log
+          # المحاولة 1: بناء عبر الـ Scheme — الصيغة الصحيحة المطلوبة مع -derivedDataPath
+          if xcodebuild \
             -project CentreAitigrine.xcodeproj \
-            -target CentreAitigrine \
+            -scheme CentreAitigrine \
             -configuration Release \
-            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY=""
+            CODE_SIGN_IDENTITY="" \
+            2>&1 | tee build.log; then
+            echo "BUILD_VIA=scheme" >> "$GITHUB_ENV"
+          else
+            # المحاولة 2 (بديل آمن): بناء عبر -target بدون -derivedDataPath
+            # الناتج يُوجَّه إلى build/SYM عبر SYMROOT (مسموح مع -target).
+            echo "فشل بناء الـ Scheme — تجربة المسار البديل عبر -target + SYMROOT"
+            xcodebuild \
+              -project CentreAitigrine.xcodeproj \
+              -target CentreAitigrine \
+              -configuration Release \
+              -sdk iphoneos \
+              SYMROOT="$PWD/build/SYM" \
+              OBJROOT="$PWD/build/OBJ" \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY="" \
+              2>&1 | tee -a build.log
+            echo "BUILD_VIA=target" >> "$GITHUB_ENV"
+          fi
 
       - name: تجميع ملف IPA غير الموقّع
         run: |
+          # البحث عن التطبيق أينما وُجد (ال scheme أو المسار البديل)
+          APP=$(find build -type d -name "CentreAitigrine.app" 2>/dev/null | grep -i "release" | head -1)
+          [ -z "$APP" ] && APP=$(find build -type d -name "CentreAitigrine.app" 2>/dev/null | head -1)
+          [ -z "$APP" ] && APP=$(find "$HOME/Library/Developer/Xcode/DerivedData" -type d -name "CentreAitigrine.app" 2>/dev/null | grep -i "release-iphoneos" | head -1)
+          if [ -z "$APP" ]; then
+            echo "::error::لم يُعثر على CentreAitigrine.app بعد البناء — راجع Artifact: build-log"
+            tail -60 build.log || true
+            exit 1
+          fi
+          echo "التطبيق المبني: $APP"
           mkdir -p Payload
-          cp -R build/Build/Products/Release-iphoneos/CentreAitigrine.app Payload/
+          cp -R "$APP" Payload/
           zip -qry CentreAitigrine-unsigned.ipa Payload
           ls -lh CentreAitigrine-unsigned.ipa
 
@@ -47,3 +90,11 @@ jobs:
           name: CentreAitigrine-unsigned-ipa
           path: CentreAitigrine-unsigned.ipa
           retention-days: 30
+
+      - name: رفع سجل البناء (للتشخيص عند أي فشل مستقبلي)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          retention-days: 7
